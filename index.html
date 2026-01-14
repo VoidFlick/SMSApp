@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Friends SMS + Groups</title>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
 *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial}
@@ -28,14 +27,26 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
 .input input{flex:1;padding:10px;border-radius:20px;border:none;background:#1e293b;color:white}
 .input button{padding:10px 16px;border:none;border-radius:20px;background:#2563eb;color:white}
 .status{font-size:12px;color:#94a3b8}
+.request-btn{padding:4px 6px;margin-left:6px;border:none;border-radius:6px;cursor:pointer}
+.accept{background:#16a34a;color:white}
+.deny{background:#dc2626;color:white}
 .hidden{display:none}
 </style>
 </head>
 <body>
+
+<div id="login" style="width:360px;background:#020617;padding:20px;border-radius:16px">
+  <h3>Enter Username</h3>
+  <input id="usernameInput" placeholder="Username" style="width:100%;margin-bottom:8px;padding:10px"/>
+  <button onclick="login()" style="width:100%">Enter</button>
+</div>
+
 <div class="app hidden" id="app">
   <div class="sidebar">
     <div class="header">Friends</div>
     <div class="list" id="friends"></div>
+    <div class="header">Friend Requests</div>
+    <div class="list" id="friendRequests"></div>
     <div class="header">Groups</div>
     <div class="list" id="groups"></div>
     <div class="controls">
@@ -56,100 +67,172 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
   </div>
 </div>
 
-<div id="login" style="width:360px;background:#020617;padding:20px;border-radius:16px">
-  <h3>Login / Register</h3>
-  <input id="email" placeholder="Email" style="width:100%;margin-bottom:8px;padding:10px" />
-  <input id="password" type="password" placeholder="Password" style="width:100%;margin-bottom:8px;padding:10px" />
-  <button onclick="login()" style="width:100%">Login / Register</button>
-</div>
-
 <script>
-// 1️⃣ CONFIGURE FIREBASE
+// 🔹 FIREBASE CONFIG - REPLACE WITH YOURS
 const firebaseConfig = {
-  apiKey: "AIzaSyExample123",
-  authDomain: "mysmsapp.firebaseapp.com",
-  databaseURL: "https://mysmsapp-default-rtdb.firebaseio.com",
-  projectId: "mysmsapp",
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PROJECT.firebaseapp.com",
+  databaseURL: "https://PROJECT.firebaseio.com",
+  projectId: "PROJECT",
 };
-
 firebase.initializeApp(firebaseConfig);
-const auth=firebase.auth();
-const db=firebase.database();
+const db = firebase.database();
 
 let user=null,currentChat=null,currentType=null;
 
-// 2️⃣ AUTH
+// 🔹 LOGIN WITH USERNAME
 function login(){
- const e=email.value,p=password.value;
- auth.signInWithEmailAndPassword(e,p).catch(()=>auth.createUserWithEmailAndPassword(e,p));
+  const name=usernameInput.value.trim();
+  if(!name)return alert('Enter username');
+  user={username:name};
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  db.ref('users/'+name).set(true);
+  setPresence();
+  loadLists();
 }
-auth.onAuthStateChanged(u=>{
- if(!u)return;user=u;login.classList.add('hidden');app.classList.remove('hidden');setPresence();loadLists();
-});
 
-// 3️⃣ ONLINE STATUS
+// 🔹 PRESENCE
 function setPresence(){
- const ref=db.ref('presence/'+user.uid);
- ref.set(true);ref.onDisconnect().remove();
+  const ref=db.ref('presence/'+user.username);
+  ref.set(true); ref.onDisconnect().remove();
 }
 
-// 4️⃣ FRIEND REQUESTS + FRIENDS
+// 🔹 FRIEND REQUESTS
 function sendFriendRequest(){
- const name=friendName.value.trim();if(!name)return;
- db.ref('requests/'+name+'/'+user.uid).set(user.email);
+  const name=friendName.value.trim();
+  if(!name || name===user.username) return;
+  db.ref('friendRequests/'+name+'/'+user.username).set(true);
+  friendName.value='';
 }
 
-function loadLists(){
- db.ref('friends/'+user.uid).on('value',s=>renderList(s,friends,'friend'));
- db.ref('groups').on('value',s=>renderGroups(s));
+// Render friend requests with accept/deny buttons
+function renderFriendRequests(){
+  const list=document.getElementById('friendRequests');
+  list.innerHTML='';
+  db.ref('friendRequests/'+user.username).once('value',snap=>{
+    snap.forEach(child=>{
+      const u=child.key;
+      const div=document.createElement('div');
+      div.className='item';
+      div.textContent=u;
+
+      const acceptBtn=document.createElement('button');
+      acceptBtn.className='request-btn accept';
+      acceptBtn.textContent='Accept';
+      acceptBtn.onclick=()=>acceptRequest(u);
+
+      const denyBtn=document.createElement('button');
+      denyBtn.className='request-btn deny';
+      denyBtn.textContent='Deny';
+      denyBtn.onclick=()=>denyRequest(u);
+
+      div.appendChild(acceptBtn);
+      div.appendChild(denyBtn);
+      list.appendChild(div);
+    });
+  });
 }
 
-function renderList(s,el,type){
- el.innerHTML='';
- s.forEach(c=>{const d=document.createElement('div');d.className='item';d.textContent=c.key;d.onclick=()=>openChat(c.key,type);el.appendChild(d);});
+// Accept/deny logic
+function acceptRequest(u){
+  db.ref('friendRequests/'+user.username+'/'+u).remove();
+  db.ref('friends/'+user.username+'/'+u).set(true);
+  db.ref('friends/'+u+'/'+user.username).set(true);
+  renderFriends();
+  renderFriendRequests();
 }
 
-// 5️⃣ GROUP CHATS
+function denyRequest(u){
+  db.ref('friendRequests/'+user.username+'/'+u).remove();
+  renderFriendRequests();
+}
+
+// 🔹 FRIENDS
+function renderFriends(){
+  const list=document.getElementById('friends');
+  list.innerHTML='';
+  db.ref('friends/'+user.username).once('value',snap=>{
+    snap.forEach(child=>{
+      const u=child.key;
+      const div=document.createElement('div');
+      div.className='item';
+      div.textContent=u;
+      div.onclick=()=>openChat(u,'friend');
+      list.appendChild(div);
+    });
+  });
+}
+
+// 🔹 GROUPS
 function createGroup(){
- const name=groupName.value.trim();if(!name)return;
- const g=db.ref('groups/'+name);
- g.child('members/'+user.uid).set(user.email);
+  const name=groupName.value.trim();
+  if(!name) return;
+  const g=db.ref('groups/'+name);
+  g.child('members/'+user.username).set(true);
+  groupName.value='';
+  renderGroups();
 }
 
-function renderGroups(s){
- groups.innerHTML='';
- s.forEach(g=>{
-  if(g.child('members/'+user.uid).exists()){
-   const d=document.createElement('div');d.className='item';d.textContent=g.key;d.onclick=()=>openChat(g.key,'group');groups.appendChild(d);
-  }
- });
+function renderGroups(){
+  const list=document.getElementById('groups');
+  list.innerHTML='';
+  db.ref('groups').once('value',snap=>{
+    snap.forEach(g=>{
+      if(g.child('members/'+user.username).exists()){
+        const div=document.createElement('div');
+        div.className='item';
+        div.textContent=g.key;
+        div.onclick=()=>openChat(g.key,'group');
+        list.appendChild(div);
+      }
+    });
+  });
 }
 
-// 6️⃣ CHAT + REALTIME MESSAGING
+// 🔹 CHAT
 function openChat(id,type){
- currentChat=id;currentType=type;chatHeader.textContent=id;messages.innerHTML='';
- const path= type==='group'?`groups/${id}/messages`:`messages/${user.uid}/${id}`;
- db.ref(path).off();
- db.ref(path).on('child_added',s=>{
-  const m=s.val();const d=document.createElement('div');d.className='bubble '+m.type;d.textContent=m.text;messages.appendChild(d);messages.scrollTop=messages.scrollHeight;
- });
- if(type==='friend'){
-  db.ref('presence/'+id).on('value',s=>presence.textContent=s.exists()?'Online':'Offline');
- }
+  currentChat=id; currentType=type;
+  document.getElementById('chatHeader').textContent=id;
+  const messagesEl=document.getElementById('messages');
+  messagesEl.innerHTML='';
+
+  const path=type==='group'?`groups/${id}/messages`:`messages/${user.username}/${id}`;
+  db.ref(path).off();
+  db.ref(path).on('child_added',snap=>{
+    const m=snap.val();
+    const div=document.createElement('div');
+    div.className='bubble '+m.type;
+    div.textContent=m.text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop=messagesEl.scrollHeight;
+  });
 }
 
+// 🔹 SEND MESSAGE
 function sendMessage(){
- if(!currentChat)return;const t=msg.value.trim();if(!t)return;msg.value='';
- if(currentType==='group'){
-  db.ref(`groups/${currentChat}/messages`).push({text:t,type:'sent',from:user.uid});
- }else{
-  db.ref(`messages/${user.uid}/${currentChat}`).push({text:t,type:'sent'});
-  db.ref(`messages/${currentChat}/${user.uid}`).push({text:t,type:'received'});
- }
+  if(!currentChat) return;
+  const t=document.getElementById('msg').value.trim();
+  if(!t) return;
+  document.getElementById('msg').value='';
+
+  if(currentType==='group'){
+    db.ref(`groups/${currentChat}/messages`).push({text:t,type:'sent',from:user.username});
+  }else{
+    db.ref(`messages/${user.username}/${currentChat}`).push({text:t,type:'sent'});
+    db.ref(`messages/${currentChat}/${user.username}`).push({text:t,type:'received'});
+  }
 }
 
-// 7️⃣ BLOCK USERS (simple)
-function block(uid){ db.ref('blocked/'+user.uid+'/'+uid).set(true); }
+// 🔹 UPDATE LISTS REGULARLY
+setInterval(()=>{
+  if(user){
+    renderFriends();
+    renderFriendRequests();
+    renderGroups();
+  }
+},2000);
 </script>
+
 </body>
 </html>
