@@ -80,16 +80,26 @@ const db = firebase.database();
 
 let user=null,currentChat=null,currentType=null;
 
-// 🔹 LOGIN WITH USERNAME
+// 🔹 LOGIN WITH USERNAME AND REMEMBER
 function login(){
   const name=usernameInput.value.trim();
-  if(!name)return alert('Enter username');
+  if(!name) return alert('Enter username');
   user={username:name};
+  localStorage.setItem('username', name); // stays logged in
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   db.ref('users/'+name).set(true);
   setPresence();
   loadLists();
+}
+
+// 🔹 AUTO-LOGIN if username stored
+window.onload = ()=>{
+  const saved = localStorage.getItem('username');
+  if(saved){
+    usernameInput.value = saved;
+    login();
+  }
 }
 
 // 🔹 PRESENCE
@@ -106,7 +116,6 @@ function sendFriendRequest(){
   friendName.value='';
 }
 
-// Render friend requests with accept/deny buttons
 function renderFriendRequests(){
   const list=document.getElementById('friendRequests');
   list.innerHTML='';
@@ -134,7 +143,6 @@ function renderFriendRequests(){
   });
 }
 
-// Accept/deny logic
 function acceptRequest(u){
   db.ref('friendRequests/'+user.username+'/'+u).remove();
   db.ref('friends/'+user.username+'/'+u).set(true);
@@ -224,7 +232,7 @@ function sendMessage(){
   }
 }
 
-// 🔹 UPDATE LISTS REGULARLY
+// 🔹 UPDATE LISTS
 setInterval(()=>{
   if(user){
     renderFriends();
