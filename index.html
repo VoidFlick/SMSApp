@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Friends SMS + Groups (Optimized)</title>
+<title>Friends SMS + Groups with Images</title>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <style>
 *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial}
 body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;justify-content:center;color:white}
@@ -24,13 +25,15 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
 .sent{align-self:flex-end;background:#2563eb;border-bottom-right-radius:4px}
 .received{align-self:flex-start;background:#1e293b;border-bottom-left-radius:4px}
 .input{display:flex;gap:8px;padding:12px;border-top:1px solid #1e293b}
-.input input{flex:1;padding:10px;border-radius:20px;border:none;background:#1e293b;color:white}
+.input input[type="text"]{flex:1;padding:10px;border-radius:20px;border:none;background:#1e293b;color:white}
+.input input[type="file"]{flex:0;padding:5px;}
 .input button{padding:10px 16px;border:none;border-radius:20px;background:#2563eb;color:white}
 .status{font-size:12px;color:#94a3b8}
 .request-btn{padding:4px 6px;margin-left:6px;border:none;border-radius:6px;cursor:pointer}
 .accept{background:#16a34a;color:white}
 .deny{background:#dc2626;color:white}
 .hidden{display:none}
+img.message-img{max-width:200px;max-height:200px;border-radius:12px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -52,8 +55,12 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
     <div class="controls">
       <input id="friendName" placeholder="Add friend" />
       <button onclick="sendFriendRequest()">Add</button>
+
       <input id="groupName" placeholder="New group" />
       <button onclick="createGroup()">Create</button>
+
+      <input id="inviteUsername" placeholder="Invite friend to group" />
+      <button onclick="inviteToGroup()">Invite</button>
     </div>
   </div>
   <div class="chat">
@@ -61,7 +68,8 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
     <div class="status" id="presence"></div>
     <div class="messages" id="messages"></div>
     <div class="input">
-      <input id="msg" placeholder="Message" />
+      <input type="text" id="msg" placeholder="Message" />
+      <input type="file" id="imageInput" accept="image/*"/>
       <button onclick="sendMessage()">Send</button>
     </div>
   </div>
@@ -77,6 +85,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+const storage = firebase.storage();
 
 let user=null,currentChat=null,currentType=null;
 
@@ -85,7 +94,7 @@ function login(){
   const name=usernameInput.value.trim();
   if(!name) return alert('Enter username');
   user={username:name};
-  localStorage.setItem('username', name); 
+  localStorage.setItem('username', name);
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   db.ref('users/'+name).set(true);
@@ -134,15 +143,24 @@ function openChat(id,type){
   messagesEl.innerHTML='';
 
   const path=type==='group'?`groups/${id}/messages`:`messages/${user.username}/${id}`;
-  db.ref(path).off(); // remove old listeners
+  db.ref(path).off();
   db.ref(path).on('child_added',snap=>{
     const m=snap.val();
     if(!m) return;
     const div=document.createElement('div');
     div.className='bubble '+m.type;
-    div.textContent=m.text;
+    if(m.image){
+      const img = document.createElement('img');
+      img.src = m.image;
+      img.className = 'message-img';
+      img.onclick = () => window.open(m.image,'_blank');
+      div.appendChild(img);
+      if(m.text) div.appendChild(document.createTextNode(' ' + m.text));
+    } else {
+      div.textContent = m.text;
+    }
     messagesEl.appendChild(div);
-    messagesEl.scrollTop=messagesEl.scrollHeight;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   });
 
   if(type==='friend'){
@@ -152,18 +170,39 @@ function openChat(id,type){
   } else document.getElementById('presence').textContent='';
 }
 
-// 🔹 SEND MESSAGE
+// 🔹 SEND MESSAGE + IMAGE
 function sendMessage(){
   if(!currentChat) return;
-  const t=document.getElementById('msg').value.trim();
-  if(!t) return;
-  document.getElementById('msg').value='';
+  const text = document.getElementById('msg').value.trim();
+  const fileInput = document.getElementById('imageInput');
+  const file = fileInput.files[0];
+
+  if(!text && !file) return alert('Type a message or select an image');
+  document.getElementById('msg').value = '';
+  fileInput.value = '';
+
+  if(file){
+    const ext = file.name.split('.').pop();
+    const filename = `${user.username}_${Date.now()}.${ext}`;
+    const uploadTask = storage.ref(`images/${filename}`).put(file);
+    uploadTask.on('state_changed', null, console.error, () => {
+      uploadTask.snapshot.ref.getDownloadURL().then(url => {
+        sendToDB(text,url);
+      });
+    });
+  } else sendToDB(text,null);
+}
+
+function sendToDB(text,imageURL){
+  const msgData = {text: text || '', type:'sent'};
+  if(imageURL) msgData.image = imageURL;
 
   if(currentType==='group'){
-    db.ref(`groups/${currentChat}/messages`).push({text:t,type:'sent',from:user.username});
-  }else{
-    db.ref(`messages/${user.username}/${currentChat}`).push({text:t,type:'sent'});
-    db.ref(`messages/${currentChat}/${user.username}`).push({text:t,type:'received'});
+    db.ref(`groups/${currentChat}/messages`).push(msgData);
+  } else {
+    db.ref(`messages/${user.username}/${currentChat}`).push(msgData);
+    const recvMsg = Object.assign({}, msgData, {type:'received'});
+    db.ref(`messages/${currentChat}/${user.username}`).push(recvMsg);
   }
 }
 
@@ -175,9 +214,21 @@ function createGroup(){
   groupName.value='';
 }
 
-// 🔹 REALTIME LISTENERS (optimized)
+function inviteToGroup(){
+  if(!currentChat || currentType!=='group') return alert('Select a group first');
+  const username = document.getElementById('inviteUsername').value.trim();
+  if(!username) return alert('Enter a username');
+
+  db.ref(`users/${username}`).once('value',snap=>{
+    if(!snap.exists()) return alert('User does not exist');
+    db.ref(`groups/${currentChat}/members/${username}`).set(true);
+    document.getElementById('inviteUsername').value='';
+    alert(`${username} added to ${currentChat}`);
+  });
+}
+
+// 🔹 REALTIME LISTENERS
 function setupRealtimeListeners(){
-  // FRIENDS
   db.ref('friends/'+user.username).on('value',snap=>{
     const list=document.getElementById('friends'); list.innerHTML='';
     snap.forEach(child=>{
@@ -190,27 +241,20 @@ function setupRealtimeListeners(){
     });
   });
 
-  // FRIEND REQUESTS
   db.ref('friendRequests/'+user.username).on('value',snap=>{
     const list=document.getElementById('friendRequests'); list.innerHTML='';
     snap.forEach(child=>{
       const u=child.key;
       const div=document.createElement('div'); div.className='item'; div.textContent=u;
-
-      const acceptBtn=document.createElement('button');
-      acceptBtn.className='request-btn accept'; acceptBtn.textContent='Accept';
+      const acceptBtn=document.createElement('button'); acceptBtn.className='request-btn accept'; acceptBtn.textContent='Accept';
       acceptBtn.onclick=()=>acceptRequest(u);
-
-      const denyBtn=document.createElement('button');
-      denyBtn.className='request-btn deny'; denyBtn.textContent='Deny';
+      const denyBtn=document.createElement('button'); denyBtn.className='request-btn deny'; denyBtn.textContent='Deny';
       denyBtn.onclick=()=>denyRequest(u);
-
       div.appendChild(acceptBtn); div.appendChild(denyBtn);
       list.appendChild(div);
     });
   });
 
-  // GROUPS
   db.ref('groups').on('value',snap=>{
     const list=document.getElementById('groups'); list.innerHTML='';
     snap.forEach(g=>{
