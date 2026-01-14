@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Friends SMS + Groups with Images</title>
+<title>Friends SMS + Groups with Profiles</title>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
@@ -14,11 +14,11 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
 .sidebar{width:280px;border-right:1px solid #1e293b;display:flex;flex-direction:column}
 .header{padding:14px;border-bottom:1px solid #1e293b;font-weight:600}
 .list{flex:1;overflow-y:auto}
-.item{padding:12px 14px;border-bottom:1px solid #1e293b;cursor:pointer}
+.item{padding:12px 14px;border-bottom:1px solid #1e293b;cursor:pointer;display:flex;align-items:center;justify-content:space-between}
 .item.active,.item:hover{background:#1e293b}
-.controls{padding:10px;border-top:1px solid #1e293b;display:flex;gap:6px;flex-wrap:wrap}
-.controls input{flex:1;padding:8px;border-radius:8px;border:none;background:#1e293b;color:white}
-.controls button{padding:8px 10px;border:none;border-radius:8px;background:#2563eb;color:white;cursor:pointer}
+.controls{padding:10px;border-top:1px solid #1e293b;display:flex;flex-direction:column;gap:6px}
+.controls input{padding:8px;border-radius:8px;border:none;background:#1e293b;color:white;width:100%}
+.controls button{padding:8px 10px;border:none;border-radius:8px;background:#2563eb;color:white;cursor:pointer;width:100%}
 .chat{flex:1;display:flex;flex-direction:column}
 .messages{flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
 .bubble{max-width:70%;padding:10px 14px;border-radius:18px;font-size:14px;word-wrap:break-word}
@@ -26,7 +26,7 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
 .received{align-self:flex-start;background:#1e293b;border-bottom-left-radius:4px}
 .input{display:flex;gap:8px;padding:12px;border-top:1px solid #1e293b}
 .input input[type="text"]{flex:1;padding:10px;border-radius:20px;border:none;background:#1e293b;color:white}
-.input input[type="file"]{flex:0;padding:5px;}
+.input input[type="file"]{flex:0;padding:5px}
 .input button{padding:10px 16px;border:none;border-radius:20px;background:#2563eb;color:white}
 .status{font-size:12px;color:#94a3b8}
 .request-btn{padding:4px 6px;margin-left:6px;border:none;border-radius:6px;cursor:pointer}
@@ -34,6 +34,9 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
 .deny{background:#dc2626;color:white}
 .hidden{display:none}
 img.message-img{max-width:200px;max-height:200px;border-radius:12px;cursor:pointer}
+.profile-btn,.menu-btn{padding:4px 6px;margin-left:6px;border:none;border-radius:6px;cursor:pointer;font-size:12px;background:#1e293b;color:white}
+.profile-btn:hover,.menu-btn:hover{background:#2563eb}
+.item-buttons{display:flex;gap:4px;align-items:center}
 </style>
 </head>
 <body>
@@ -54,13 +57,13 @@ img.message-img{max-width:200px;max-height:200px;border-radius:12px;cursor:point
     <div class="list" id="groups"></div>
     <div class="controls">
       <input id="friendName" placeholder="Add friend" />
-      <button onclick="sendFriendRequest()">Add</button>
+      <button onclick="sendFriendRequest()">Add Friend</button>
 
       <input id="groupName" placeholder="New group" />
-      <button onclick="createGroup()">Create</button>
+      <button onclick="createGroup()">Create Group</button>
 
       <input id="inviteUsername" placeholder="Invite friend to group" />
-      <button onclick="inviteToGroup()">Invite</button>
+      <button onclick="inviteToGroup()">Invite to Group</button>
     </div>
   </div>
   <div class="chat">
@@ -76,12 +79,13 @@ img.message-img{max-width:200px;max-height:200px;border-radius:12px;cursor:point
 </div>
 
 <script>
-// 🔹 FIREBASE CONFIG
+// 🔹 Firebase config
 const firebaseConfig = {
-  apiKey: "AIzaSyACe28tbhepXAMCgsegstIkqW9jfOhHn6U",
-  authDomain: "mysmsapp.firebaseapp.com",
-  databaseURL: "https://mysmsapp-d4145-default-rtdb.firebaseio.com/",
-  projectId: "MySMSApp",
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PROJECT.firebaseapp.com",
+  databaseURL: "https://PROJECT.firebaseio.com",
+  projectId: "PROJECT",
+  storageBucket: "PROJECT.appspot.com"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
@@ -89,7 +93,7 @@ const storage = firebase.storage();
 
 let user=null,currentChat=null,currentType=null;
 
-// 🔹 LOGIN
+// 🔹 Login
 function login(){
   const name=usernameInput.value.trim();
   if(!name) return alert('Enter username');
@@ -102,7 +106,7 @@ function login(){
   setupRealtimeListeners();
 }
 
-// 🔹 AUTO-LOGIN
+// 🔹 Auto-login
 window.onload = ()=>{
   const saved = localStorage.getItem('username');
   if(saved){
@@ -111,13 +115,13 @@ window.onload = ()=>{
   }
 }
 
-// 🔹 PRESENCE
+// 🔹 Presence
 function setPresence(){
   const ref=db.ref('presence/'+user.username);
   ref.set(true); ref.onDisconnect().remove();
 }
 
-// 🔹 FRIEND REQUESTS
+// 🔹 Friend Requests
 function sendFriendRequest(){
   const name=friendName.value.trim();
   if(!name || name===user.username) return;
@@ -135,7 +139,7 @@ function denyRequest(u){
   db.ref('friendRequests/'+user.username+'/'+u).remove();
 }
 
-// 🔹 FRIENDS
+// 🔹 Open Chat
 function openChat(id,type){
   currentChat=id; currentType=type;
   document.getElementById('chatHeader').textContent=id;
@@ -150,12 +154,12 @@ function openChat(id,type){
     const div=document.createElement('div');
     div.className='bubble '+m.type;
     if(m.image){
-      const img = document.createElement('img');
-      img.src = m.image;
-      img.className = 'message-img';
-      img.onclick = () => window.open(m.image,'_blank');
+      const img=document.createElement('img');
+      img.src=m.image;
+      img.className='message-img';
+      img.onclick = ()=>window.open(m.image,'_blank');
       div.appendChild(img);
-      if(m.text) div.appendChild(document.createTextNode(' ' + m.text));
+      if(m.text) div.appendChild(document.createTextNode(' '+m.text));
     } else {
       div.textContent = m.text;
     }
@@ -170,43 +174,38 @@ function openChat(id,type){
   } else document.getElementById('presence').textContent='';
 }
 
-// 🔹 SEND MESSAGE + IMAGE
+// 🔹 Send Message + Image
 function sendMessage(){
   if(!currentChat) return;
   const text = document.getElementById('msg').value.trim();
   const fileInput = document.getElementById('imageInput');
   const file = fileInput.files[0];
-
   if(!text && !file) return alert('Type a message or select an image');
-  document.getElementById('msg').value = '';
-  fileInput.value = '';
+  document.getElementById('msg').value=''; fileInput.value='';
 
   if(file){
     const ext = file.name.split('.').pop();
     const filename = `${user.username}_${Date.now()}.${ext}`;
     const uploadTask = storage.ref(`images/${filename}`).put(file);
-    uploadTask.on('state_changed', null, console.error, () => {
-      uploadTask.snapshot.ref.getDownloadURL().then(url => {
-        sendToDB(text,url);
-      });
+    uploadTask.on('state_changed',null,console.error,()=>{
+      uploadTask.snapshot.ref.getDownloadURL().then(url=>sendToDB(text,url));
     });
   } else sendToDB(text,null);
 }
 
 function sendToDB(text,imageURL){
-  const msgData = {text: text || '', type:'sent'};
-  if(imageURL) msgData.image = imageURL;
+  const msgData = {text:text||'', type:'sent'};
+  if(imageURL) msgData.image=imageURL;
 
   if(currentType==='group'){
     db.ref(`groups/${currentChat}/messages`).push(msgData);
   } else {
     db.ref(`messages/${user.username}/${currentChat}`).push(msgData);
-    const recvMsg = Object.assign({}, msgData, {type:'received'});
-    db.ref(`messages/${currentChat}/${user.username}`).push(recvMsg);
+    db.ref(`messages/${currentChat}/${user.username}`).push({...msgData,type:'received'});
   }
 }
 
-// 🔹 GROUPS
+// 🔹 Groups
 function createGroup(){
   const name=groupName.value.trim();
   if(!name) return;
@@ -218,7 +217,6 @@ function inviteToGroup(){
   if(!currentChat || currentType!=='group') return alert('Select a group first');
   const username = document.getElementById('inviteUsername').value.trim();
   if(!username) return alert('Enter a username');
-
   db.ref(`users/${username}`).once('value',snap=>{
     if(!snap.exists()) return alert('User does not exist');
     db.ref(`groups/${currentChat}/members/${username}`).set(true);
@@ -227,15 +225,48 @@ function inviteToGroup(){
   });
 }
 
-// 🔹 REALTIME LISTENERS
+// 🔹 Profiles and management
+function viewProfile(username){
+  db.ref('users/'+username).once('value',snap=>{
+    if(!snap.exists()) return alert('User does not exist');
+    alert(`Profile of ${username}\nUsername: ${username}`);
+  });
+}
+
+function manageFriend(username){
+  const action = prompt(`Manage ${username}:\nType "remove" to unfriend`);
+  if(action==='remove'){
+    db.ref(`friends/${user.username}/${username}`).remove();
+    db.ref(`friends/${username}/${user.username}`).remove();
+    alert(`${username} removed from friends`);
+  }
+}
+
+function manageGroup(groupName){
+  const action = prompt(`Manage group ${groupName}:\nType "leave" to leave group`);
+  if(action==='leave'){
+    db.ref(`groups/${groupName}/members/${user.username}`).remove();
+    alert(`You left ${groupName}`);
+  }
+}
+
+// 🔹 Realtime Listeners
 function setupRealtimeListeners(){
   db.ref('friends/'+user.username).on('value',snap=>{
     const list=document.getElementById('friends'); list.innerHTML='';
     snap.forEach(child=>{
       const u=child.key;
-      const div=document.createElement('div');
-      div.className='item';
-      div.textContent=u;
+      const div=document.createElement('div'); div.className='item';
+      const nameSpan = document.createElement('span'); nameSpan.textContent=u;
+
+      const btns=document.createElement('div'); btns.className='item-buttons';
+      const profileBtn=document.createElement('button'); profileBtn.textContent='Profile'; profileBtn.className='profile-btn';
+      profileBtn.onclick=()=>viewProfile(u);
+      const menuBtn=document.createElement('button'); menuBtn.textContent='…'; menuBtn.className='menu-btn';
+      menuBtn.onclick=()=>manageFriend(u);
+      btns.appendChild(profileBtn); btns.appendChild(menuBtn);
+
+      div.appendChild(nameSpan); div.appendChild(btns);
       div.onclick=()=>openChat(u,'friend');
       list.appendChild(div);
     });
@@ -259,9 +290,17 @@ function setupRealtimeListeners(){
     const list=document.getElementById('groups'); list.innerHTML='';
     snap.forEach(g=>{
       if(g.child('members/'+user.username).exists()){
+        const groupName = g.key;
         const div=document.createElement('div'); div.className='item';
-        div.textContent=g.key;
-        div.onclick=()=>openChat(g.key,'group');
+        const nameSpan = document.createElement('span'); nameSpan.textContent=groupName;
+
+        const btns=document.createElement('div'); btns.className='item-buttons';
+        const menuBtn=document.createElement('button'); menuBtn.textContent='…'; menuBtn.className='menu-btn';
+        menuBtn.onclick=()=>manageGroup(groupName);
+        btns.appendChild(menuBtn);
+
+        div.appendChild(nameSpan); div.appendChild(btns);
+        div.onclick=()=>openChat(groupName,'group');
         list.appendChild(div);
       }
     });
