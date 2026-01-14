@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Friends SMS + Groups</title>
+<title>Friends SMS + Groups (Optimized)</title>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
@@ -20,7 +20,7 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
 .controls button{padding:8px 10px;border:none;border-radius:8px;background:#2563eb;color:white;cursor:pointer}
 .chat{flex:1;display:flex;flex-direction:column}
 .messages{flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
-.bubble{max-width:70%;padding:10px 14px;border-radius:18px;font-size:14px}
+.bubble{max-width:70%;padding:10px 14px;border-radius:18px;font-size:14px;word-wrap:break-word}
 .sent{align-self:flex-end;background:#2563eb;border-bottom-right-radius:4px}
 .received{align-self:flex-start;background:#1e293b;border-bottom-left-radius:4px}
 .input{display:flex;gap:8px;padding:12px;border-top:1px solid #1e293b}
@@ -68,7 +68,7 @@ body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;ju
 </div>
 
 <script>
-// 🔹 FIREBASE CONFIG - REPLACE WITH YOURS
+// 🔹 FIREBASE CONFIG
 const firebaseConfig = {
   apiKey: "AIzaSyACe28tbhepXAMCgsegstIkqW9jfOhHn6U",
   authDomain: "mysmsapp.firebaseapp.com",
@@ -80,20 +80,20 @@ const db = firebase.database();
 
 let user=null,currentChat=null,currentType=null;
 
-// 🔹 LOGIN WITH USERNAME AND REMEMBER
+// 🔹 LOGIN
 function login(){
   const name=usernameInput.value.trim();
   if(!name) return alert('Enter username');
   user={username:name};
-  localStorage.setItem('username', name); // stays logged in
+  localStorage.setItem('username', name); 
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   db.ref('users/'+name).set(true);
   setPresence();
-  loadLists();
+  setupRealtimeListeners();
 }
 
-// 🔹 AUTO-LOGIN if username stored
+// 🔹 AUTO-LOGIN
 window.onload = ()=>{
   const saved = localStorage.getItem('username');
   if(saved){
@@ -116,89 +116,17 @@ function sendFriendRequest(){
   friendName.value='';
 }
 
-function renderFriendRequests(){
-  const list=document.getElementById('friendRequests');
-  list.innerHTML='';
-  db.ref('friendRequests/'+user.username).once('value',snap=>{
-    snap.forEach(child=>{
-      const u=child.key;
-      const div=document.createElement('div');
-      div.className='item';
-      div.textContent=u;
-
-      const acceptBtn=document.createElement('button');
-      acceptBtn.className='request-btn accept';
-      acceptBtn.textContent='Accept';
-      acceptBtn.onclick=()=>acceptRequest(u);
-
-      const denyBtn=document.createElement('button');
-      denyBtn.className='request-btn deny';
-      denyBtn.textContent='Deny';
-      denyBtn.onclick=()=>denyRequest(u);
-
-      div.appendChild(acceptBtn);
-      div.appendChild(denyBtn);
-      list.appendChild(div);
-    });
-  });
-}
-
 function acceptRequest(u){
   db.ref('friendRequests/'+user.username+'/'+u).remove();
   db.ref('friends/'+user.username+'/'+u).set(true);
   db.ref('friends/'+u+'/'+user.username).set(true);
-  renderFriends();
-  renderFriendRequests();
 }
 
 function denyRequest(u){
   db.ref('friendRequests/'+user.username+'/'+u).remove();
-  renderFriendRequests();
 }
 
 // 🔹 FRIENDS
-function renderFriends(){
-  const list=document.getElementById('friends');
-  list.innerHTML='';
-  db.ref('friends/'+user.username).once('value',snap=>{
-    snap.forEach(child=>{
-      const u=child.key;
-      const div=document.createElement('div');
-      div.className='item';
-      div.textContent=u;
-      div.onclick=()=>openChat(u,'friend');
-      list.appendChild(div);
-    });
-  });
-}
-
-// 🔹 GROUPS
-function createGroup(){
-  const name=groupName.value.trim();
-  if(!name) return;
-  const g=db.ref('groups/'+name);
-  g.child('members/'+user.username).set(true);
-  groupName.value='';
-  renderGroups();
-}
-
-function renderGroups(){
-  const list=document.getElementById('groups');
-  list.innerHTML='';
-  db.ref('groups').once('value',snap=>{
-    snap.forEach(g=>{
-      if(g.child('members/'+user.username).exists()){
-        const div=document.createElement('div');
-        div.className='item';
-        div.textContent=g.key;
-        div.onclick=()=>openChat(g.key,'group');
-        list.appendChild(div);
-      }
-    });
-  });
-}
-
-// 🔹 CHAT
 function openChat(id,type){
   currentChat=id; currentType=type;
   document.getElementById('chatHeader').textContent=id;
@@ -206,15 +134,22 @@ function openChat(id,type){
   messagesEl.innerHTML='';
 
   const path=type==='group'?`groups/${id}/messages`:`messages/${user.username}/${id}`;
-  db.ref(path).off();
+  db.ref(path).off(); // remove old listeners
   db.ref(path).on('child_added',snap=>{
     const m=snap.val();
+    if(!m) return;
     const div=document.createElement('div');
     div.className='bubble '+m.type;
     div.textContent=m.text;
     messagesEl.appendChild(div);
     messagesEl.scrollTop=messagesEl.scrollHeight;
   });
+
+  if(type==='friend'){
+    const presenceEl=document.getElementById('presence');
+    db.ref('presence/'+id).off();
+    db.ref('presence/'+id).on('value',s=>presenceEl.textContent=s.exists()?'Online':'Offline');
+  } else document.getElementById('presence').textContent='';
 }
 
 // 🔹 SEND MESSAGE
@@ -232,15 +167,62 @@ function sendMessage(){
   }
 }
 
-// 🔹 UPDATE LISTS
-setInterval(()=>{
-  if(user){
-    renderFriends();
-    renderFriendRequests();
-    renderGroups();
-  }
-},2000);
-</script>
+// 🔹 GROUPS
+function createGroup(){
+  const name=groupName.value.trim();
+  if(!name) return;
+  db.ref('groups/'+name+'/members/'+user.username).set(true);
+  groupName.value='';
+}
 
+// 🔹 REALTIME LISTENERS (optimized)
+function setupRealtimeListeners(){
+  // FRIENDS
+  db.ref('friends/'+user.username).on('value',snap=>{
+    const list=document.getElementById('friends'); list.innerHTML='';
+    snap.forEach(child=>{
+      const u=child.key;
+      const div=document.createElement('div');
+      div.className='item';
+      div.textContent=u;
+      div.onclick=()=>openChat(u,'friend');
+      list.appendChild(div);
+    });
+  });
+
+  // FRIEND REQUESTS
+  db.ref('friendRequests/'+user.username).on('value',snap=>{
+    const list=document.getElementById('friendRequests'); list.innerHTML='';
+    snap.forEach(child=>{
+      const u=child.key;
+      const div=document.createElement('div'); div.className='item'; div.textContent=u;
+
+      const acceptBtn=document.createElement('button');
+      acceptBtn.className='request-btn accept'; acceptBtn.textContent='Accept';
+      acceptBtn.onclick=()=>acceptRequest(u);
+
+      const denyBtn=document.createElement('button');
+      denyBtn.className='request-btn deny'; denyBtn.textContent='Deny';
+      denyBtn.onclick=()=>denyRequest(u);
+
+      div.appendChild(acceptBtn); div.appendChild(denyBtn);
+      list.appendChild(div);
+    });
+  });
+
+  // GROUPS
+  db.ref('groups').on('value',snap=>{
+    const list=document.getElementById('groups'); list.innerHTML='';
+    snap.forEach(g=>{
+      if(g.child('members/'+user.username).exists()){
+        const div=document.createElement('div'); div.className='item';
+        div.textContent=g.key;
+        div.onclick=()=>openChat(g.key,'group');
+        list.appendChild(div);
+      }
+    });
+  });
+}
+</script>
 </body>
 </html>
