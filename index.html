@@ -1,1 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Friends SMS + Groups</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial}
+body{margin:0;background:#0f172a;height:100vh;display:flex;align-items:center;justify-content:center;color:white}
+.app{width:1000px;height:620px;background:#020617;border-radius:20px;display:flex;overflow:hidden}
+.sidebar{width:280px;border-right:1px solid #1e293b;display:flex;flex-direction:column}
+.header{padding:14px;border-bottom:1px solid #1e293b;font-weight:600}
+.list{flex:1;overflow-y:auto}
+.item{padding:12px 14px;border-bottom:1px solid #1e293b;cursor:pointer}
+.item.active,.item:hover{background:#1e293b}
+.controls{padding:10px;border-top:1px solid #1e293b;display:flex;gap:6px;flex-wrap:wrap}
+.controls input{flex:1;padding:8px;border-radius:8px;border:none;background:#1e293b;color:white}
+.controls button{padding:8px 10px;border:none;border-radius:8px;background:#2563eb;color:white;cursor:pointer}
+.chat{flex:1;display:flex;flex-direction:column}
+.messages{flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.bubble{max-width:70%;padding:10px 14px;border-radius:18px;font-size:14px}
+.sent{align-self:flex-end;background:#2563eb;border-bottom-right-radius:4px}
+.received{align-self:flex-start;background:#1e293b;border-bottom-left-radius:4px}
+.input{display:flex;gap:8px;padding:12px;border-top:1px solid #1e293b}
+.input input{flex:1;padding:10px;border-radius:20px;border:none;background:#1e293b;color:white}
+.input button{padding:10px 16px;border:none;border-radius:20px;background:#2563eb;color:white}
+.status{font-size:12px;color:#94a3b8}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="app hidden" id="app">
+  <div class="sidebar">
+    <div class="header">Friends</div>
+    <div class="list" id="friends"></div>
+    <div class="header">Groups</div>
+    <div class="list" id="groups"></div>
+    <div class="controls">
+      <input id="friendName" placeholder="Add friend" />
+      <button onclick="sendFriendRequest()">Add</button>
+      <input id="groupName" placeholder="New group" />
+      <button onclick="createGroup()">Create</button>
+    </div>
+  </div>
+  <div class="chat">
+    <div class="header" id="chatHeader">Select a chat</div>
+    <div class="status" id="presence"></div>
+    <div class="messages" id="messages"></div>
+    <div class="input">
+      <input id="msg" placeholder="Message" />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+</div>
 
+<div id="login" style="width:360px;background:#020617;padding:20px;border-radius:16px">
+  <h3>Login / Register</h3>
+  <input id="email" placeholder="Email" style="width:100%;margin-bottom:8px;padding:10px" />
+  <input id="password" type="password" placeholder="Password" style="width:100%;margin-bottom:8px;padding:10px" />
+  <button onclick="login()" style="width:100%">Login / Register</button>
+</div>
+
+<script>
+// 1️⃣ CONFIGURE FIREBASE
+const firebaseConfig = {
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PROJECT.firebaseapp.com",
+  databaseURL: "https://PROJECT.firebaseio.com",
+  projectId: "PROJECT",
+};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth();
+const db=firebase.database();
+
+let user=null,currentChat=null,currentType=null;
+
+// 2️⃣ AUTH
+function login(){
+ const e=email.value,p=password.value;
+ auth.signInWithEmailAndPassword(e,p).catch(()=>auth.createUserWithEmailAndPassword(e,p));
+}
+auth.onAuthStateChanged(u=>{
+ if(!u)return;user=u;login.classList.add('hidden');app.classList.remove('hidden');setPresence();loadLists();
+});
+
+// 3️⃣ ONLINE STATUS
+function setPresence(){
+ const ref=db.ref('presence/'+user.uid);
+ ref.set(true);ref.onDisconnect().remove();
+}
+
+// 4️⃣ FRIEND REQUESTS + FRIENDS
+function sendFriendRequest(){
+ const name=friendName.value.trim();if(!name)return;
+ db.ref('requests/'+name+'/'+user.uid).set(user.email);
+}
+
+function loadLists(){
+ db.ref('friends/'+user.uid).on('value',s=>renderList(s,friends,'friend'));
+ db.ref('groups').on('value',s=>renderGroups(s));
+}
+
+function renderList(s,el,type){
+ el.innerHTML='';
+ s.forEach(c=>{const d=document.createElement('div');d.className='item';d.textContent=c.key;d.onclick=()=>openChat(c.key,type);el.appendChild(d);});
+}
+
+// 5️⃣ GROUP CHATS
+function createGroup(){
+ const name=groupName.value.trim();if(!name)return;
+ const g=db.ref('groups/'+name);
+ g.child('members/'+user.uid).set(user.email);
+}
+
+function renderGroups(s){
+ groups.innerHTML='';
+ s.forEach(g=>{
+  if(g.child('members/'+user.uid).exists()){
+   const d=document.createElement('div');d.className='item';d.textContent=g.key;d.onclick=()=>openChat(g.key,'group');groups.appendChild(d);
+  }
+ });
+}
+
+// 6️⃣ CHAT + REALTIME MESSAGING
+function openChat(id,type){
+ currentChat=id;currentType=type;chatHeader.textContent=id;messages.innerHTML='';
+ const path= type==='group'?`groups/${id}/messages`:`messages/${user.uid}/${id}`;
+ db.ref(path).off();
+ db.ref(path).on('child_added',s=>{
+  const m=s.val();const d=document.createElement('div');d.className='bubble '+m.type;d.textContent=m.text;messages.appendChild(d);messages.scrollTop=messages.scrollHeight;
+ });
+ if(type==='friend'){
+  db.ref('presence/'+id).on('value',s=>presence.textContent=s.exists()?'Online':'Offline');
+ }
+}
+
+function sendMessage(){
+ if(!currentChat)return;const t=msg.value.trim();if(!t)return;msg.value='';
+ if(currentType==='group'){
+  db.ref(`groups/${currentChat}/messages`).push({text:t,type:'sent',from:user.uid});
+ }else{
+  db.ref(`messages/${user.uid}/${currentChat}`).push({text:t,type:'sent'});
+  db.ref(`messages/${currentChat}/${user.uid}`).push({text:t,type:'received'});
+ }
+}
+
+// 7️⃣ BLOCK USERS (simple)
+function block(uid){ db.ref('blocked/'+user.uid+'/'+uid).set(true); }
+</script>
+</body>
+</html>
